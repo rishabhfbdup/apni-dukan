@@ -7,32 +7,41 @@ from datetime import datetime
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
 st.title("🏪 Apni Dukaan Ka Digital Register")
-st.write("Premium Ledger: Dashboard + Passbook + WhatsApp + Tarikh ke sath!")
+st.write("🚀 Premium Version: Dashboard + Analytics + Charts + Passbook + Backup!")
 
-# Session state for permanent data in this session
+# Session state for data storage
 if "dukaan_ledger" not in st.session_state:
     st.session_state.dukaan_ledger = pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)"])
 
 df = st.session_state.dukaan_ledger
 
-# --- 1. DASHBOARD ANALYTICS ---
+# --- 1. DASHBOARD ANALYTICS & CHARTS ---
 st.markdown("### 📊 Aaj Ka Hisab-Kitab")
 if not df.empty:
     unique_cust = df["Grahak Ka Naam"].nunique()
-    net_balances = df.groupby("Grahak Ka Naam")["Amount (₹)"].sum()
-    total_udhaar = net_balances[net_balances > 0].sum()
+    net_balances = df.groupby("Grahak Ka Naam")["Amount (₹)"].sum().reset_index()
+    net_balances.columns = ["Grahak Ka Naam", "Net Balance (₹)"]
+    total_udhaar = net_balances[net_balances["Net Balance (₹)"] > 0]["Net Balance (₹)"].sum()
 else:
     unique_cust = 0
     total_udhaar = 0
+    net_balances = pd.DataFrame(columns=["Grahak Ka Naam", "Net Balance (₹)"])
 
 col_cust, col_bal = st.columns(2)
 with col_cust:
     st.metric(label="Total Active Customers", value=unique_cust)
 with col_bal:
     st.metric(label="Total Market Udhaar (₹)", value=f"₹ {total_udhaar}")
+
+# --- NEW FEATURE: CHART ---
+if not net_balances.empty and total_udhaar > 0:
+    st.markdown("#### 📈 Udhaar Ka Graph (Top Grahak)")
+    chart_data = net_balances[net_balances["Net Balance (₹)"] > 0].set_index("Grahak Ka Naam")
+    st.bar_chart(chart_data)
+
 st.markdown("---")
 
-# --- 2. NAYI ENTRY (UDHAAR vs JAMA + DATE AUTOMATIC) ---
+# --- 2. NAYI ENTRY ---
 st.subheader("📝 Nayi Entry Jodein")
 with st.form(key="entry_form", clear_on_submit=True):
     name = st.text_input("Grahak Ka Naam (Required)").strip()
@@ -78,8 +87,8 @@ if submit_button:
         st.success(f"🎉 {name} ka hisab kamyabi se save ho gaya!")
         st.rerun()
 
-# --- 3. SEARCH & LIVE LEDGER ---
-st.subheader("🔎 Grahak Dhoondhein aur WhatsApp Bhejein")
+# --- 3. SEARCH, REMINDERS & LIVE LEDGER ---
+st.subheader("🔎 Grahak Dhoondhein aur Reminders")
 search_query = st.text_input("Naam likh kar search karein...", "").strip().lower()
 
 if not df.empty:
@@ -91,7 +100,7 @@ if not df.empty:
         
     for index, row in summary_df.iterrows():
         with st.container():
-            c1, c2, c3 = st.columns([4, 3, 3])
+            c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
             with c1:
                 st.write(f"👤 **{row['Grahak Ka Naam']}** ({row['Mobile Number']})")
             with c2:
@@ -99,15 +108,12 @@ if not df.empty:
                     st.write(f"🔴 Udhaar: **₹{row['Total Balance (₹)']}**")
                 else:
                     st.write(f"🟢 Clear: **₹{abs(row['Total Balance (₹)'])}**")
+            
+            # Text Message Prepare for WhatsApp & SMS Copy
+            if row['Total Balance (₹)'] > 0:
+                msg = f"Namaste {row['Grahak Ka Naam']}, aapka ₹{row['Total Balance (₹)']} ka udhaar baaki hai. Kripya samay par jama karein. 🙏 - Apni Dukaan"
+            else:
+                msg = f"Namaste {row['Grahak Ka Naam']}, aapka hisab poora clear hai. Dhanyawad! 🙏 - Apni Dukaan"
+                
             with c3:
-                # FIXED LINE: Brackets are perfectly closed here now
-                if row['Mobile Number'] != "N/A" and len(str(row['Mobile Number'])) == 10:
-                    if row['Total Balance (₹)'] > 0:
-                        msg = f"Namaste {row['Grahak Ka Naam']}, aapka ₹{row['Total Balance (₹)']} ka udhaar baaki hai. Kripya samay par jama karein. 🙏 - Apni Dukaan"
-                    else:
-                        msg = f"Namaste {row['Grahak Ka Naam']}, aapka hisab poora clear hai. Dhanyawad! 🙏 - Apni Dukaan"
-                    whatsapp_url = f"https://wa.me/91{row['Mobile Number']}?text={urllib.parse.quote(msg)}"
-                    st.markdown(f"[💬 WhatsApp]({whatsapp_url})", unsafe_allow_html=True)
-                else:
-                    st.write("No WhatsApp")
-        st.markdown
+                if row['Mobile Number'] != "N/A" and len(str(row['Mobile Number'])) == 1
