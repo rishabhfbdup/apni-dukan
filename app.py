@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
 import urllib.parse
+import requests
 from datetime import datetime
 
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
+
+# FIREBASE CONFIGURATION
+FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
 
 # --- FEATURE 1: APP THEME CHANGER ---
 st.sidebar.title("⚙️ App Settings")
@@ -53,16 +57,36 @@ if not st.session_state.dukaan_profile["registered"]:
         elif len(d_mobile.strip()) != 10:
             st.error("❌ Kripya valid 10-digit mobile number dalein!")
         else:
-            st.session_state.dukaan_profile = {
-                "registered": True,
-                "owner_name": d_owner_name.strip(),
+            # Prepare data for Firebase cloud
+            user_data = {
                 "shop_name": d_shop_name.strip(),
+                "owner_name": d_owner_name.strip(),
                 "mobile": d_mobile.strip(),
                 "alt_mobile": d_alt_mobile.strip() if d_alt_mobile else "N/A",
-                "pan": d_pan.strip() if d_pan else "N/A"
+                "pan": d_pan.strip() if d_pan else "N/A",
+                "registered_at": datetime.now().strftime("%d-%m-%Y %I:%M %p")
             }
-            st.success("🎉 Registration Successful! Aapka register khul raha hai...")
-            st.rerun()
+            
+            # Cloud storage backup trigger
+            try:
+                # Saving user details into Firebase under 'users' path using phone number as unique key
+                requests.put(f"{FIREBASE_URL}users/{user_data['mobile']}.json", json=user_data)
+                
+                st.session_state.dukaan_profile = {
+                    "registered": True,
+                    "owner_name": user_data["owner_name"],
+                    "shop_name": user_data["shop_name"],
+                    "mobile": user_data["mobile"],
+                    "alt_mobile": user_data["alt_mobile"],
+                    "pan": user_data["pan"]
+                }
+                st.success("🎉 Cloud Registration Successful! Aapka register khul raha hai...")
+                st.rerun()
+            except Exception as e:
+                st.error("⚠️ Cloud connection error! Lekin aap temporary use kar sakte hain.")
+                # Fallback to local session if network fails
+                st.session_state.dukaan_profile["registered"] = True
+                st.rerun()
 
 # --- MAIN APP LOGIC: REGISTRATION KE BAAD KA SCREEN ---
 else:
@@ -80,7 +104,7 @@ else:
         st.rerun()
 
     st.title(f"🏪 {current_shop} Ka Digital Register")
-    st.write(f"Welcome back, **{current_owner}**! Apna digital khata manage karein.")
+    st.write(f"Welcome back, **{current_owner}**! Cloud storage active hai. ☁️")
 
     # --- DASHBOARD ANALYTICS & CHARTS ---
     st.markdown("### 📊 Aaj Ka Hisab-Kitab")
