@@ -6,8 +6,25 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
+# --- NEW FEATURE 1: APP THEME CHANGER ---
+st.sidebar.title("⚙️ App Settings")
+theme = st.sidebar.selectbox("App Mode Chunein:", ["☀️ Light Mode", "🌑 Dark Mode"])
+
+# Custom CSS for Dark Mode styling dynamically
+if "Dark Mode" in theme:
+    st.markdown(
+        """
+        <style>
+        .stApp { background-color: #121212; color: #FFFFFF; }
+        div[data-testid="stForm"] { background-color: #1E1E1E !important; border: 1px solid #333 !important; }
+        div[data-testid="stMetricWidget"] { background-color: #1E1E1E !important; border: 1px solid #333 !important; padding: 10px; border-radius: 5px; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 st.title("🏪 Apni Dukaan Ka Digital Register")
-st.write("🚀 Premium Version: Dashboard + Analytics + Charts + Passbook + Backup!")
+st.write("🚀 VIP Version: Analytics + Charts + Passbook + Calculator + Credit Alert!")
 
 # Session state for data storage
 if "dukaan_ledger" not in st.session_state:
@@ -87,77 +104,19 @@ if submit_button:
         st.success(f"🎉 {name} ka hisab kamyabi se save ho gaya!")
         st.rerun()
 
+# --- NEW FEATURE 2: BUILT-IN CALCULATOR ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧮 Quick Calculator")
+num1 = st.sidebar.number_input("Pehla Number", value=0, step=1, key="calc1")
+num2 = st.sidebar.number_input("Doosra Number", value=0, step=1, key="calc2")
+op = st.sidebar.selectbox("Kya karna hai?", ["➕ Jodein (+)", "➖ Ghatayein (-)"])
+if op == "➕ Jodein (+)":
+    st.sidebar.info(f"Total Jod: **{num1 + num2}**")
+else:
+    st.sidebar.info(f"Total bacha: **{num1 - num2}**")
+
 # --- ALWAYS VISIBLE DELETE OPTION ---
 st.markdown("---")
 st.subheader("🗑️ Entry Hataiyein (Delete)")
 delete_id = st.number_input("Mitane ke liye Entry ID daalye", min_value=1, step=1)
-if st.button("Register se Saaf Karein"):
-    if not df.empty and delete_id in df["ID"].values:
-        st.session_state.dukaan_ledger = df[df["ID"] != delete_id]
-        st.success(f"ID {delete_id} ko mita diya gaya!")
-        st.rerun()
-    else:
-        st.error("Is ID ki koi entry nahi mili ya register khali hai!")
-st.markdown("---")
-
-# --- 3. SEARCH, REMINDERS & LIVE LEDGER ---
-st.subheader("🔎 Grahak Dhoondhein aur Reminders")
-search_query = st.text_input("Naam likh kar search karein...", "").strip().lower()
-
-if not df.empty:
-    summary_df = df.groupby(["Grahak Ka Naam", "Mobile Number"])["Amount (₹)"].sum().reset_index()
-    summary_df.columns = ["Grahak Ka Naam", "Mobile Number", "Total Balance (₹)"]
-    
-    if search_query:
-        summary_df = summary_df[summary_df["Grahak Ka Naam"].str.lower().str.contains(search_query)]
-        
-    for index, row in summary_df.iterrows():
-        with st.container():
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-            with c1:
-                st.write(f"👤 **{row['Grahak Ka Naam']}** ({row['Mobile Number']})")
-            with c2:
-                if row['Total Balance (₹)'] > 0:
-                    st.write(f"🔴 Udhaar: **₹{row['Total Balance (₹)']}**")
-                else:
-                    st.write(f"🟢 Clear: **₹{abs(row['Total Balance (₹)'])}**")
-            
-            if row['Total Balance (₹)'] > 0:
-                msg = f"Namaste {row['Grahak Ka Naam']}, aapka ₹{row['Total Balance (₹)']} ka udhaar baaki hai. Kripya samay par jama karein. 🙏 - Apni Dukaan"
-            else:
-                msg = f"Namaste {row['Grahak Ka Naam']}, aapka hisab poora clear hai. Dhanyawad! 🙏 - Apni Dukaan"
-                
-            with c3:
-                if row['Mobile Number'] != "N/A" and len(str(row['Mobile Number'])) == 10:
-                    whatsapp_url = f"https://wa.me/91{row['Mobile Number']}?text={urllib.parse.quote(msg)}"
-                    st.markdown(f"[💬 WhatsApp]({whatsapp_url})", unsafe_allow_html=True)
-                else:
-                    st.write("No WhatsApp")
-                    
-            with c4:
-                st.text_input("Copy Msg", value=msg, key=f"copy_{index}", label_visibility="collapsed")
-                st.caption("Text select karke copy karein")
-        st.markdown("---")
-
-    # --- 4. GRAHAK PASSBOOK ---
-    st.subheader("📉 Grahak Passbook (Statement History)")
-    all_custs = sorted(df["Grahak Ka Naam"].unique())
-    selected_cust = st.selectbox("Kisi Grahak ki poori history dekhne ke liye chunein:", ["-- Select Customer --"] + all_custs)
-    
-    if selected_cust != "-- Select Customer --":
-        cust_history = df[df["Grahak Ka Naam"] == selected_cust][["Tarikh", "Details", "Amount (₹)"]].copy()
-        cust_history["Amount (₹)"] = cust_history["Amount (₹)"].apply(lambda x: f"🔴 Udhaar: ₹{x}" if x > 0 else f"🟢 Jama: ₹{abs(x)}")
-        st.table(cust_history)
-
-    # BACKUP DOWNLOAD
-    st.markdown("---")
-    st.subheader("📥 Register Ka Backup Download Karein")
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Full Register (CSV Excel File)",
-        data=csv,
-        file_name=f"Dukaan_Register_Backup_{datetime.now().strftime('%d-%m-%Y')}.csv",
-        mime='text/csv',
-    )
-else:
-    st.info("Abhi register khali hai. Nayi entry jodein!")
+if st.
