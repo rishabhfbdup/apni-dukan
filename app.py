@@ -7,7 +7,7 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
-# FIREBASE REALTIME DATABASE URL
+# PERFECTLY CONFIGURING USER'S FIREBASE URL
 FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
 
 # --- FEATURE 1: APP THEME CHANGER ---
@@ -55,25 +55,25 @@ if not st.session_state.dukaan_profile["registered"]:
                 st.error("❌ Kripya sahi Mobile Number aur 4-digit PIN dalein!")
             else:
                 try:
-                    # Fetching user from Firebase using mobile number
-                    response = requests.get(f"{FIREBASE_URL}users/{l_mobile.strip()}.json")
+                    clean_url = FIREBASE_URL.strip()
+                    response = requests.get(f"{clean_url}users/{l_mobile.strip()}.json", timeout=10)
                     user_data = response.json()
                     
                     if user_data and user_data.get("pin") == l_pin.strip():
                         st.session_state.dukaan_profile = {
                             "registered": True,
-                            "owner_name": user_data["owner_name"],
-                            "shop_name": user_data["shop_name"],
-                            "mobile": user_data["mobile"],
-                            "alt_mobile": user_data["alt_mobile"],
-                            "pan": user_data["pan"]
+                            "owner_name": user_data.get("owner_name", "Owner"),
+                            "shop_name": user_data.get("shop_name", "Apni Dukaan"),
+                            "mobile": user_data.get("mobile", l_mobile.strip()),
+                            "alt_mobile": user_data.get("alt_mobile", "N/A"),
+                            "pan": user_data.get("pan", "N/A")
                         }
-                        st.success(f"🎉 Welcome Back {user_data['owner_name']}!")
+                        st.success(f"🎉 Welcome Back {st.session_state.dukaan_profile['owner_name']}!")
                         st.rerun()
                     else:
                         st.error("❌ Galat Mobile Number ya PIN! Kripya dobara check karein.")
-                except:
-                    st.error("⚠️ Database connection fail! Internet check karein.")
+                except Exception as err:
+                    st.error(f"⚠️ Login Connection Fail! Error: {err}")
                     
     else:
         st.subheader("📋 Nayi Dukaan Ka Registration")
@@ -95,13 +95,13 @@ if not st.session_state.dukaan_profile["registered"]:
             elif len(d_pin.strip()) != 4 or not d_pin.isdigit():
                 st.error("❌ PIN sirf 4 अंकों ka number hona chahiye!")
             else:
-                # Check if user already exists
                 try:
-                    check_exist = requests.get(f"{FIREBASE_URL}users/{d_mobile.strip()}.json").json()
+                    clean_url = FIREBASE_URL.strip()
+                    check_exist = requests.get(f"{clean_url}users/{d_mobile.strip()}.json", timeout=10).json()
+                    
                     if check_exist:
                         st.error("🚨 Yeh mobile number pehle se registered hai! Login karein.")
                     else:
-                        # Save new user into Firebase
                         user_data = {
                             "shop_name": d_shop_name.strip(),
                             "owner_name": d_owner_name.strip(),
@@ -111,20 +111,24 @@ if not st.session_state.dukaan_profile["registered"]:
                             "pan": d_pan.strip() if d_pan else "N/A",
                             "registered_at": datetime.now().strftime("%d-%m-%Y %I:%M %p")
                         }
-                        requests.put(f"{FIREBASE_URL}users/{user_data['mobile']}.json", json=user_data)
                         
-                        st.session_state.dukaan_profile = {
-                            "registered": True,
-                            "owner_name": user_data["owner_name"],
-                            "shop_name": user_data["shop_name"],
-                            "mobile": user_data["mobile"],
-                            "alt_mobile": user_data["alt_mobile"],
-                            "pan": user_data["pan"]
-                        }
-                        st.success("🎉 Registration Successful! Aapka register khul raha hai...")
-                        st.rerun()
-                except:
-                    st.error("⚠️ Cloud connectivity issue. Kripya thodi der baad try karein.")
+                        req_res = requests.put(f"{clean_url}users/{user_data['mobile']}.json", json=user_data, timeout=10)
+                        
+                        if req_res.status_code == 200:
+                            st.session_state.dukaan_profile = {
+                                "registered": True,
+                                "owner_name": user_data["owner_name"],
+                                "shop_name": user_data["shop_name"],
+                                "mobile": user_data["mobile"],
+                                "alt_mobile": user_data["alt_mobile"],
+                                "pan": user_data["pan"]
+                            }
+                            st.success("🎉 Registration Successful! Aapka register khul raha hai...")
+                            st.rerun()
+                        else:
+                            st.error(f"🚨 Firebase Rejected! Status code: {req_res.status_code}. Rules update karein.")
+                except Exception as cloud_err:
+                    st.error(f"⚠️ Connection Error: {cloud_err}")
 
 # --- MAIN APP LOGIC: REGISTRATION/LOGIN KE BAAD KA SCREEN ---
 else:
