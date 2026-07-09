@@ -7,7 +7,7 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
-# FIREBASE CONFIGURATION
+# FIREBASE REALTIME DATABASE URL
 FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
 
 # --- FEATURE 1: APP THEME CHANGER ---
@@ -26,7 +26,7 @@ if "Dark Mode" in theme:
         unsafe_allow_html=True
     )
 
-# --- DUKAANDAR REGISTRATION PROFILE STATE ---
+# --- DUKAANDAR PROFILE SESSION STATE ---
 if "dukaan_profile" not in st.session_state:
     st.session_state.dukaan_profile = {
         "registered": False, "owner_name": "", "shop_name": "", "mobile": "", "alt_mobile": "", "pan": ""
@@ -37,58 +37,96 @@ if "dukaan_ledger" not in st.session_state:
 
 df = st.session_state.dukaan_ledger
 
-# --- LOCK SCREEN: AGAR REGISTRATION NAHI HUA HAI ---
+# --- LOCK GATE: LOGIN / REGISTRATION SYSTEM ---
 if not st.session_state.dukaan_profile["registered"]:
-    st.title("🔐 Welcome! Apni Dukaan Register Karein")
-    st.write("App ka istemaal shuru karne ke liye kripya pehle apni dukan ki details bharein.")
+    st.title("🔐 Apni Dukaan Digital Register Login")
     
-    with st.form(key="main_reg_form"):
-        d_shop_name = st.text_input("Dukaan Ka Naam *")
-        d_owner_name = st.text_input("Dukaandar Ka Naam *")
-        d_mobile = st.text_input("Mobile Number *", max_chars=10)
-        d_alt_mobile = st.text_input("Alternative Number (Optional)", max_chars=10)
-        d_pan = st.text_input("PAN Card Number (Optional)", max_chars=10).upper()
-        
-        submit_reg = st.form_submit_button("🚀 Registration Complete Karein")
-        
-    if submit_reg:
-        if d_shop_name.strip() == "" or d_owner_name.strip() == "" or d_mobile.strip() == "":
-            st.error("❌ Kripya saari zaroori (*) details bharein!")
-        elif len(d_mobile.strip()) != 10:
-            st.error("❌ Kripya valid 10-digit mobile number dalein!")
-        else:
-            # Prepare data for Firebase cloud
-            user_data = {
-                "shop_name": d_shop_name.strip(),
-                "owner_name": d_owner_name.strip(),
-                "mobile": d_mobile.strip(),
-                "alt_mobile": d_alt_mobile.strip() if d_alt_mobile else "N/A",
-                "pan": d_pan.strip() if d_pan else "N/A",
-                "registered_at": datetime.now().strftime("%d-%m-%Y %I:%M %p")
-            }
+    choice = st.radio("Kya aap naye user hain ya purane?", ["Existing User (Login)", "New User (Register)"], horizontal=True)
+    
+    if choice == "Existing User (Login)":
+        st.subheader("🔑 Apna Account Login Karein")
+        with st.form(key="login_form"):
+            l_mobile = st.text_input("Registered Mobile Number", max_chars=10)
+            l_pin = st.text_input("Enter 4-Digit Secret PIN", type="password", max_chars=4)
+            login_btn = st.form_submit_button("🔓 Log In")
             
-            # Cloud storage backup trigger
-            try:
-                # Saving user details into Firebase under 'users' path using phone number as unique key
-                requests.put(f"{FIREBASE_URL}users/{user_data['mobile']}.json", json=user_data)
-                
-                st.session_state.dukaan_profile = {
-                    "registered": True,
-                    "owner_name": user_data["owner_name"],
-                    "shop_name": user_data["shop_name"],
-                    "mobile": user_data["mobile"],
-                    "alt_mobile": user_data["alt_mobile"],
-                    "pan": user_data["pan"]
-                }
-                st.success("🎉 Cloud Registration Successful! Aapka register khul raha hai...")
-                st.rerun()
-            except Exception as e:
-                st.error("⚠️ Cloud connection error! Lekin aap temporary use kar sakte hain.")
-                # Fallback to local session if network fails
-                st.session_state.dukaan_profile["registered"] = True
-                st.rerun()
+        if login_btn:
+            if len(l_mobile.strip()) != 10 or len(l_pin.strip()) != 4:
+                st.error("❌ Kripya sahi Mobile Number aur 4-digit PIN dalein!")
+            else:
+                try:
+                    # Fetching user from Firebase using mobile number
+                    response = requests.get(f"{FIREBASE_URL}users/{l_mobile.strip()}.json")
+                    user_data = response.json()
+                    
+                    if user_data and user_data.get("pin") == l_pin.strip():
+                        st.session_state.dukaan_profile = {
+                            "registered": True,
+                            "owner_name": user_data["owner_name"],
+                            "shop_name": user_data["shop_name"],
+                            "mobile": user_data["mobile"],
+                            "alt_mobile": user_data["alt_mobile"],
+                            "pan": user_data["pan"]
+                        }
+                        st.success(f"🎉 Welcome Back {user_data['owner_name']}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Galat Mobile Number ya PIN! Kripya dobara check karein.")
+                except:
+                    st.error("⚠️ Database connection fail! Internet check karein.")
+                    
+    else:
+        st.subheader("📋 Nayi Dukaan Ka Registration")
+        with st.form(key="main_reg_form"):
+            d_shop_name = st.text_input("Dukaan Ka Naam *")
+            d_owner_name = st.text_input("Dukaandar Ka Naam *")
+            d_mobile = st.text_input("Mobile Number *", max_chars=10)
+            d_pin = st.text_input("Set 4-Digit Secret PIN * (For Login)", type="password", max_chars=4)
+            d_alt_mobile = st.text_input("Alternative Number (Optional)", max_chars=10)
+            d_pan = st.text_input("PAN Card Number (Optional)", max_chars=10).upper()
+            
+            submit_reg = st.form_submit_button("🚀 Registration Complete Karein")
+            
+        if submit_reg:
+            if d_shop_name.strip() == "" or d_owner_name.strip() == "" or d_mobile.strip() == "" or d_pin.strip() == "":
+                st.error("❌ Kripya saari zaroori (*) details bharein!")
+            elif len(d_mobile.strip()) != 10:
+                st.error("❌ Kripya valid 10-digit mobile number dalein!")
+            elif len(d_pin.strip()) != 4 or not d_pin.isdigit():
+                st.error("❌ PIN sirf 4 अंकों ka number hona chahiye!")
+            else:
+                # Check if user already exists
+                try:
+                    check_exist = requests.get(f"{FIREBASE_URL}users/{d_mobile.strip()}.json").json()
+                    if check_exist:
+                        st.error("🚨 Yeh mobile number pehle se registered hai! Login karein.")
+                    else:
+                        # Save new user into Firebase
+                        user_data = {
+                            "shop_name": d_shop_name.strip(),
+                            "owner_name": d_owner_name.strip(),
+                            "mobile": d_mobile.strip(),
+                            "pin": d_pin.strip(),
+                            "alt_mobile": d_alt_mobile.strip() if d_alt_mobile else "N/A",
+                            "pan": d_pan.strip() if d_pan else "N/A",
+                            "registered_at": datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                        }
+                        requests.put(f"{FIREBASE_URL}users/{user_data['mobile']}.json", json=user_data)
+                        
+                        st.session_state.dukaan_profile = {
+                            "registered": True,
+                            "owner_name": user_data["owner_name"],
+                            "shop_name": user_data["shop_name"],
+                            "mobile": user_data["mobile"],
+                            "alt_mobile": user_data["alt_mobile"],
+                            "pan": user_data["pan"]
+                        }
+                        st.success("🎉 Registration Successful! Aapka register khul raha hai...")
+                        st.rerun()
+                except:
+                    st.error("⚠️ Cloud connectivity issue. Kripya thodi der baad try karein.")
 
-# --- MAIN APP LOGIC: REGISTRATION KE BAAD KA SCREEN ---
+# --- MAIN APP LOGIC: REGISTRATION/LOGIN KE BAAD KA SCREEN ---
 else:
     current_shop = st.session_state.dukaan_profile["shop_name"]
     current_owner = st.session_state.dukaan_profile["owner_name"]
@@ -99,12 +137,13 @@ else:
     st.sidebar.write(f"**Dukaan:** {current_shop}")
     st.sidebar.write(f"**Owner:** {current_owner}")
     st.sidebar.write(f"**Mobile:** {st.session_state.dukaan_profile['mobile']}")
-    if st.sidebar.button("Logout / Re-Register 🔄"):
+    if st.sidebar.button("Logout 🚪"):
         st.session_state.dukaan_profile["registered"] = False
+        st.session_state.dukaan_ledger = pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)"])
         st.rerun()
 
     st.title(f"🏪 {current_shop} Ka Digital Register")
-    st.write(f"Welcome back, **{current_owner}**! Cloud storage active hai. ☁️")
+    st.write(f"Welcome back, **{current_owner}**! Cloud storage secure hai. ☁️")
 
     # --- DASHBOARD ANALYTICS & CHARTS ---
     st.markdown("### 📊 Aaj Ka Hisab-Kitab")
