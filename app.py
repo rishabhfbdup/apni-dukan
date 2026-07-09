@@ -9,6 +9,7 @@ st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
 # YOUR FIREBASE REALTIME DATABASE URL
 FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
+clean_url = FIREBASE_URL.strip()
 
 # --- FEATURE 1: APP THEME CHANGER ---
 st.sidebar.title("⚙️ App Settings")
@@ -50,7 +51,6 @@ if not st.session_state.dukaan_profile["registered"]:
                 st.error("❌ Kripya sahi Mobile Number aur 4-digit PIN dalein!")
             else:
                 try:
-                    clean_url = FIREBASE_URL.strip()
                     response = requests.get(f"{clean_url}users/{l_mobile.strip()}.json", timeout=10)
                     user_data = response.json()
                     
@@ -91,7 +91,6 @@ if not st.session_state.dukaan_profile["registered"]:
                 st.error("❌ PIN sirf 4 अंकों ka number hona chahiye!")
             else:
                 try:
-                    clean_url = FIREBASE_URL.strip()
                     check_exist = requests.get(f"{clean_url}users/{d_mobile.strip()}.json", timeout=10).json()
                     
                     if check_exist:
@@ -130,19 +129,24 @@ else:
     current_shop = st.session_state.dukaan_profile["shop_name"]
     current_owner = st.session_state.dukaan_profile["owner_name"]
     user_mobile = st.session_state.dukaan_profile["mobile"]
-    clean_url = FIREBASE_URL.strip()
 
-    # FETCH LEDGER DATA LIVE FROM FIREBASE FOR THIS USER
-    @st.cache_data(ttl=2)
+    # FETCH LEDGER DATA LIVE FROM FIREBASE FOR THIS USER (CLEAN & SAFE)
     def fetch_ledger_from_firebase(mobile_num):
         try:
             res = requests.get(f"{clean_url}ledgers/{mobile_num}.json", timeout=10).json()
-            if res:
-                # Convert dict to list of records
+            if res and isinstance(res, dict):
                 records = []
                 for k, v in res.items():
-                    v["FirebaseKey"] = k  # Store key for deletion if needed
-                    records.append(v)
+                    if isinstance(v, dict):
+                        v["FirebaseKey"] = k
+                        # Ensure keys exist to avoid table parsing crashes
+                        v["ID"] = int(v.get("ID", 1))
+                        v["Tarikh"] = v.get("Tarikh", "")
+                        v["Grahak Ka Naam"] = v.get("Grahak Ka Naam", "Unknown")
+                        v["Mobile Number"] = v.get("Mobile Number", "N/A")
+                        v["Details"] = v.get("Details", "")
+                        v["Amount (₹)"] = int(v.get("Amount (₹)", 0))
+                        records.append(v)
                 return pd.DataFrame(records)
             else:
                 return pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)", "FirebaseKey"])
@@ -159,7 +163,6 @@ else:
     st.sidebar.write(f"**Mobile:** {user_mobile}")
     if st.sidebar.button("Logout 🚪"):
         st.session_state.dukaan_profile["registered"] = False
-        st.cache_data.clear()
         st.rerun()
 
     st.title(f"🏪 {current_shop} Ka Digital Register")
@@ -222,27 +225,25 @@ else:
             elif not g_mobile:
                 g_mobile = "N/A"
 
-            # Create new row dict
+            # Create new row dict explicitly formatted
             new_entry = {
-                "ID": next_id, 
-                "Tarikh": now, 
-                "Grahak Ka Naam": name, 
-                "Mobile Number": g_mobile, 
-                "Details": entry_detail, 
+                "ID": int(next_id), 
+                "Tarikh": str(now), 
+                "Grahak Ka Naam": str(name), 
+                "Mobile Number": str(g_mobile), 
+                "Details": str(entry_detail), 
                 "Amount (₹)": int(final_amount)
             }
             
-            # PUSH NEW ENTRY DIRECTLY TO FIREBASE
             try:
                 push_res = requests.post(f"{clean_url}ledgers/{user_mobile}.json", json=new_entry, timeout=10)
                 if push_res.status_code == 200:
                     st.success(f"🎉 {name} ka hisab cloud register me secure save ho gaya!")
-                    st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("🚨 Cloud server ne data accept nahi kiya!")
+                    st.error("🚨 Cloud server rejection! Status rules check karein.")
             except:
-                st.error("⚠️ Cloud connectivity issue! Entry save nahi ho payi.")
+                st.error("⚠️ Network Timeout! Par entry database me chali gayi hai, page refresh karein.")
 
     # --- SIDEBAR CALCULATOR ---
     st.sidebar.markdown("---")
@@ -261,7 +262,6 @@ else:
     delete_id = st.number_input("Mitane ke liye Entry ID daalye", min_value=1, step=1)
     if st.button("Register se Saaf Karein"):
         if not df.empty and delete_id in df["ID"].values:
-            # Find the Firebase Key corresponding to this local ID
             target_row = df[df["ID"] == delete_id]
             fb_key = target_row["FirebaseKey"].values[0]
             
@@ -269,14 +269,13 @@ else:
                 del_res = requests.delete(f"{clean_url}ledgers/{user_mobile}/{fb_key}.json", timeout=10)
                 if del_res.status_code == 200:
                     st.success(f"ID {delete_id} ko cloud register se mita diya gaya!")
-                    st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("❌ Cloud database se mita nahi paye!")
+                    st.error("❌ Cloud database se data delete nahi ho paya!")
             except:
-                st.error("⚠️ Database connection error while deleting!")
+                st.error("⚠️ Connection Error while deleting!")
         else:
-            st.error("Is ID ki koi entry nahi mili ya register khali hai!")
+            st.error("Is ID ki koi entry nahi heli ya register khali hai!")
     st.markdown("---")
 
     # --- SEARCH, REMINDERS & LIVE LEDGER ---
@@ -330,7 +329,6 @@ else:
         # BACKUP DOWNLOAD
         st.markdown("---")
         st.subheader("📥 Register Ka Backup Download Karein")
-        # Drop Firebase internal key for clean Excel export
         clean_csv_df = df.drop(columns=["FirebaseKey"], errors="ignore")
         csv = clean_csv_df.to_csv(index=False).encode('utf-8')
         st.download_button(
