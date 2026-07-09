@@ -59,4 +59,4 @@ if submit_button:
             st.success(f"🎉 {name} ka account update ho gaya!")
         else:
             # Create new customer
-            next_id = int(df["ID"].max()
+            next_id = int(df["ID"].max() + 1)
