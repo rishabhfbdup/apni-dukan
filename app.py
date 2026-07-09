@@ -7,7 +7,7 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
-# PERFECTLY CONFIGURING USER'S FIREBASE URL
+# YOUR FIREBASE REALTIME DATABASE URL
 FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
 
 # --- FEATURE 1: APP THEME CHANGER ---
@@ -31,11 +31,6 @@ if "dukaan_profile" not in st.session_state:
     st.session_state.dukaan_profile = {
         "registered": False, "owner_name": "", "shop_name": "", "mobile": "", "alt_mobile": "", "pan": ""
     }
-
-if "dukaan_ledger" not in st.session_state:
-    st.session_state.dukaan_ledger = pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)"])
-
-df = st.session_state.dukaan_ledger
 
 # --- LOCK GATE: LOGIN / REGISTRATION SYSTEM ---
 if not st.session_state.dukaan_profile["registered"]:
@@ -134,20 +129,41 @@ if not st.session_state.dukaan_profile["registered"]:
 else:
     current_shop = st.session_state.dukaan_profile["shop_name"]
     current_owner = st.session_state.dukaan_profile["owner_name"]
+    user_mobile = st.session_state.dukaan_profile["mobile"]
+    clean_url = FIREBASE_URL.strip()
+
+    # FETCH LEDGER DATA LIVE FROM FIREBASE FOR THIS USER
+    @st.cache_data(ttl=2)
+    def fetch_ledger_from_firebase(mobile_num):
+        try:
+            res = requests.get(f"{clean_url}ledgers/{mobile_num}.json", timeout=10).json()
+            if res:
+                # Convert dict to list of records
+                records = []
+                for k, v in res.items():
+                    v["FirebaseKey"] = k  # Store key for deletion if needed
+                    records.append(v)
+                return pd.DataFrame(records)
+            else:
+                return pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)", "FirebaseKey"])
+        except:
+            return pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)", "FirebaseKey"])
+
+    df = fetch_ledger_from_firebase(user_mobile)
     
     # Sidebar Profile View
     st.sidebar.markdown("---")
     st.sidebar.subheader("🏪 Active Profile")
     st.sidebar.write(f"**Dukaan:** {current_shop}")
     st.sidebar.write(f"**Owner:** {current_owner}")
-    st.sidebar.write(f"**Mobile:** {st.session_state.dukaan_profile['mobile']}")
+    st.sidebar.write(f"**Mobile:** {user_mobile}")
     if st.sidebar.button("Logout 🚪"):
         st.session_state.dukaan_profile["registered"] = False
-        st.session_state.dukaan_ledger = pd.DataFrame(columns=["ID", "Tarikh", "Grahak Ka Naam", "Mobile Number", "Details", "Amount (₹)"])
+        st.cache_data.clear()
         st.rerun()
 
     st.title(f"🏪 {current_shop} Ka Digital Register")
-    st.write(f"Welcome back, **{current_owner}**! Cloud storage secure hai. ☁️")
+    st.write(f"Welcome back, **{current_owner}**! Cloud storage live connected hai. ☁️")
 
     # --- DASHBOARD ANALYTICS & CHARTS ---
     st.markdown("### 📊 Aaj Ka Hisab-Kitab")
@@ -178,7 +194,7 @@ else:
     st.subheader("📝 Nayi Entry Jodein")
     with st.form(key="entry_form", clear_on_submit=True):
         name = st.text_input("Grahak Ka Naam (Required)").strip()
-        mobile = st.text_input("Mobile Number (Optional)", max_chars=10)
+        g_mobile = st.text_input("Mobile Number (Optional)", max_chars=10)
         details = st.text_input("Samaan ki Details (e.g., Cheeni, Sabun, Cash)")
         
         col_type, col_amt = st.columns(2)
@@ -200,19 +216,33 @@ else:
             final_amount = amount if "Udhaar Diya" in entry_type else -amount
             entry_detail = details if details else ("Udhaar" if final_amount > 0 else "Jama Kiya")
             
-            if not mobile and not df.empty:
+            if not g_mobile and not df.empty:
                 prev_mob = df[df["Grahak Ka Naam"].str.lower() == name.lower()]["Mobile Number"].values
-                mobile = prev_mob[0] if len(prev_mob) > 0 else "N/A"
-            elif not mobile:
-                mobile = "N/A"
+                g_mobile = prev_mob[0] if len(prev_mob) > 0 else "N/A"
+            elif not g_mobile:
+                g_mobile = "N/A"
 
-            new_row = pd.DataFrame([{
-                "ID": next_id, "Tarikh": now, "Grahak Ka Naam": name, 
-                "Mobile Number": mobile, "Details": entry_detail, "Amount (₹)": final_amount
-            }])
-            st.session_state.dukaan_ledger = pd.concat([df, new_row], ignore_index=True)
-            st.success(f"🎉 {name} ka hisab save ho gaya!")
-            st.rerun()
+            # Create new row dict
+            new_entry = {
+                "ID": next_id, 
+                "Tarikh": now, 
+                "Grahak Ka Naam": name, 
+                "Mobile Number": g_mobile, 
+                "Details": entry_detail, 
+                "Amount (₹)": int(final_amount)
+            }
+            
+            # PUSH NEW ENTRY DIRECTLY TO FIREBASE
+            try:
+                push_res = requests.post(f"{clean_url}ledgers/{user_mobile}.json", json=new_entry, timeout=10)
+                if push_res.status_code == 200:
+                    st.success(f"🎉 {name} ka hisab cloud register me secure save ho gaya!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("🚨 Cloud server ne data accept nahi kiya!")
+            except:
+                st.error("⚠️ Cloud connectivity issue! Entry save nahi ho payi.")
 
     # --- SIDEBAR CALCULATOR ---
     st.sidebar.markdown("---")
@@ -231,9 +261,20 @@ else:
     delete_id = st.number_input("Mitane ke liye Entry ID daalye", min_value=1, step=1)
     if st.button("Register se Saaf Karein"):
         if not df.empty and delete_id in df["ID"].values:
-            st.session_state.dukaan_ledger = df[df["ID"] != delete_id]
-            st.success(f"ID {delete_id} ko mita diya gaya!")
-            st.rerun()
+            # Find the Firebase Key corresponding to this local ID
+            target_row = df[df["ID"] == delete_id]
+            fb_key = target_row["FirebaseKey"].values[0]
+            
+            try:
+                del_res = requests.delete(f"{clean_url}ledgers/{user_mobile}/{fb_key}.json", timeout=10)
+                if del_res.status_code == 200:
+                    st.success(f"ID {delete_id} ko cloud register se mita diya gaya!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("❌ Cloud database se mita nahi paye!")
+            except:
+                st.error("⚠️ Database connection error while deleting!")
         else:
             st.error("Is ID ki koi entry nahi mili ya register khali hai!")
     st.markdown("---")
@@ -289,7 +330,9 @@ else:
         # BACKUP DOWNLOAD
         st.markdown("---")
         st.subheader("📥 Register Ka Backup Download Karein")
-        csv = df.to_csv(index=False).encode('utf-8')
+        # Drop Firebase internal key for clean Excel export
+        clean_csv_df = df.drop(columns=["FirebaseKey"], errors="ignore")
+        csv = clean_csv_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Full Register (CSV Excel File)", data=csv,
             file_name=f"Dukaan_Register_Backup_{datetime.now().strftime('%d-%m-%Y')}.csv", mime='text/csv'
