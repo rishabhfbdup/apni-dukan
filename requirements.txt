@@ -1,6 +1,6 @@
 streamlit
 pandas
 gspread
-request
+requests
 qrcode
-pillow
+Pillow
