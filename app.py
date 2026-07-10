@@ -9,6 +9,18 @@ from io import BytesIO
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
+# --- ऊपर का कंट्रोल बार हमेशा के लिए छुपाने का कोड ---
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    div[data-testid="stStatusWidget"] {visibility: hidden;}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # YOUR FIREBASE REALTIME DATABASE URL
 FIREBASE_URL = "https://apni-dukaan-db-default-rtdb.firebaseio.com/"
 clean_url = FIREBASE_URL.strip()
