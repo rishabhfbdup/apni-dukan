@@ -9,7 +9,7 @@ from io import BytesIO
 # Page configuration
 st.set_page_config(page_title="Apni Dukaan Register", layout="centered")
 
-# --- ऊपर का कंट्रोल बार हमेशा के लिए छुपाने का कोड ---
+# --- 🔐 ऊपर का कंट्रोल बार और नीचे का फुटर हमेशा के लिए छुपाने का कोड ---
 st.markdown(
     """
     <style>
@@ -17,6 +17,11 @@ st.markdown(
     footer {visibility: hidden;}
     header {visibility: hidden;}
     div[data-testid="stStatusWidget"] {visibility: hidden;}
+    .viewerBadge {display: none !important;}
+    
+    /* नीचे का लाल फुटर और 'Created by' हटाने के लिए */
+    footer, [data-testid="stFooter"] {display: none !important; visibility: hidden !important;}
+    stDecoration {display: none !important;}
     </style>
     """,
     unsafe_allow_html=True
