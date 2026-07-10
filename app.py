@@ -163,10 +163,10 @@ else:
     st.sidebar.write(f"**Owner:** {current_owner}")
     st.sidebar.write(f"**Mobile:** {user_mobile}")
     
-    # --- ADDED: SHOP PAYMENT SETTINGS IN SIDEBAR ---
+    # --- DYNAMIC PAYMENT SETUP IN SIDEBAR ---
     st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ Digital Payment Setup")
-    shop_upi = st.sidebar.text_input("Apni UPI ID Dalein (Direct Bank Entry):", placeholder="example@oksbi")
+    shop_upi = st.sidebar.text_input("Apni UPI ID Dalein:", placeholder="example@oksbi")
     shop_billing_name = st.sidebar.text_input("Bank me Darj Apna Naam:", placeholder=current_owner)
 
     if st.sidebar.button("Logout 🚪"):
@@ -194,6 +194,23 @@ else:
     with col_bal:
         st.metric(label="Total Market Udhaar (₹)", value=f"₹ {total_udhaar}")
 
+    # --- NEW FEATURE: DAILY CLOSING REPORT BUTTON ---
+    if not df.empty:
+        with st.expander("📊 Aaj Ki Bahi-Khata Closing Report Click Karein"):
+            today_str = datetime.now().strftime("%d-%m-%Y")
+            df_today = df[df["Tarikh"].str.contains(today_str)]
+            
+            if not df_today.empty:
+                aaj_ka_udhaar = df_today[df_today["Amount (₹)"] > 0]["Amount (₹)"].sum()
+                aaj_ki_ugahi = abs(df_today[df_today["Amount (₹)"] < 0]["Amount (₹)"].sum())
+                
+                st.write(f"📅 **Tarekh:** {today_str}")
+                c_ud, c_ug = st.columns(2)
+                c_ud.metric("Aaj Diya Hua Udhaar", f"₹ {aaj_ka_udhaar}")
+                c_ug.metric("Aaj Wapas Mili Rakam (Cash)", f"₹ {aaj_ki_ugahi}")
+            else:
+                st.info("Aaj ki tarekh me abhi tak koi entry nahi ki gayi hai.")
+
     if not net_balances.empty and total_udhaar > 0:
         st.markdown("#### 📈 Udhaar Ka Graph (Top Grahak)")
         chart_data = net_balances[net_balances["Net Balance (₹)"] > 0].set_index("Grahak Ka Naam")
@@ -201,7 +218,7 @@ else:
 
     st.markdown("---")
 
-    # --- NAYI ENTRY FORM ---
+    # --- NAYI ENTRY FORM (WITH PARTIAL PAYMENT FEATURE LOGIC) ---
     st.subheader("📝 Nayi Entry Jodein")
     with st.form(key="entry_form", clear_on_submit=True):
         name = st.text_input("Grahak Ka Naam (Required)").strip()
@@ -225,7 +242,16 @@ else:
             now = datetime.now().strftime("%d-%m-%Y %I:%M %p")
             next_id = int(df["ID"].max() + 1) if not df.empty else 1
             final_amount = amount if "Udhaar Diya" in entry_type else -amount
-            entry_detail = details if details else ("Udhaar" if final_amount > 0 else "Jama Kiya")
+            
+            # Partial payment history logic tracker
+            current_cust_bal = 0
+            if not df.empty and name in df["Grahak Ka Naam"].values:
+                current_cust_bal = df[df["Grahak Ka Naam"] == name]["Amount (₹)"].sum()
+                
+            if final_amount < 0:
+                entry_detail = details if details else f"Jama Kiye (Purana Baki: ₹{current_cust_bal}, Ab Bacha: ₹{current_cust_bal + final_amount})"
+            else:
+                entry_detail = details if details else "Udhaar Diya"
             
             if not g_mobile and not df.empty:
                 prev_mob = df[df["Grahak Ka Naam"].str.lower() == name.lower()]["Mobile Number"].values
@@ -283,15 +309,13 @@ else:
                 st.error("⚠️ Connection Error while deleting!")
         else:
             st.error("Is ID ki koi entry nahi heli ya register khali hai!")
-            
     st.markdown("---")
 
-    # --- SEARCH, REMINDERS & LIVE LEDGER ---
+    # --- SEARCH, REMINDERS & LIVE LEDGER (WITH QUICK CALL & AUTO QR LINK) ---
     st.subheader("🔎 Grahak Dhoondhein aur Reminders")
     
-    # Check if upi details are setup to notify user
     if not shop_upi or not shop_billing_name:
-        st.info("💡 Tip: Sidebar me apni UPI ID setup karein taaki WhatsApp par Payment Link aur QR Code automatic jaa sake!")
+        st.info("💡 Sidebar me apni UPI ID jarur setup karein taaki customers ko QR Code aur automatic link mil sake!")
 
     search_query = st.text_input("Naam likh kar search karein...", "").strip().lower()
 
@@ -315,13 +339,12 @@ else:
                     else:
                         st.write(f"🟢 Clear: **₹{abs(current_balance)}**")
                 
-                # --- UPDATED: GENERATE DYNAMIC PAYMENTS (QR + LINK) IF UDHAAR > 0 ---
+                # Payment message block composition
                 upi_string = ""
                 if current_balance > 0 and shop_upi and shop_billing_name:
                     name_encoded = urllib.parse.quote(shop_billing_name)
                     upi_string = f"upi://pay?pa={shop_upi}&pn={name_encoded}&am={current_balance}&cu=INR"
                     
-                    # Create custom text for payment reminder
                     msg = (
                         f"Namaste {row['Grahak Ka Naam']},\n"
                         f"Aapka {current_shop} par ₹{current_balance} ka udhaar baaki hai.\n\n"
@@ -340,24 +363,34 @@ else:
                     if row['Mobile Number'] != "N/A" and len(str(row['Mobile Number'])) == 10:
                         phone_formatted = f"91{row['Mobile Number']}"
                         whatsapp_url = f"https://wa.me/{phone_formatted}?text={urllib.parse.quote(msg)}"
+                        call_url = f"tel:+91{row['Mobile Number']}"
                         
-                        # A better stylized Green WhatsApp button for better UI
+                        # --- STYLIZED GREEN WHATSAPP BUTTON ---
                         st.markdown(
                             f'<a href="{whatsapp_url}" target="_blank" style="text-decoration: none;">'
                             f'<button style="background-color: #25D366; color: white; border: none; '
-                            f'padding: 5px 10px; text-align: center; font-size: 13px; font-weight: bold; '
-                            f'cursor: pointer; border-radius: 5px;">💬 WhatsApp</button></a>',
+                            f'padding: 5px 10px; font-size: 13px; font-weight: bold; '
+                            f'cursor: pointer; border-radius: 5px; margin-bottom: 5px; width: 100%;">💬 WhatsApp</button></a>',
+                            unsafe_allow_html=True
+                        )
+                        
+                        # --- NEW FEATURE: STYLIZED BLUE DIRECT CALL BUTTON ---
+                        st.markdown(
+                            f'<a href="{call_url}" style="text-decoration: none;">'
+                            f'<button style="background-color: #007bff; color: white; border: none; '
+                            f'padding: 5px 10px; font-size: 13px; font-weight: bold; '
+                            f'cursor: pointer; border-radius: 5px; width: 100%;">📞 Call Now</button></a>',
                             unsafe_allow_html=True
                         )
                     else:
-                        st.write("No WhatsApp")
+                        st.write("No Contact")
                 with c4:
                     st.text_input("Copy Msg", value=msg, key=f"copy_{index}", label_visibility="collapsed")
                     st.caption("Select to copy manual text")
                 
-                # --- ADDED: EXPLICIT DYNAMIC EXPANDABLE QR CODE OPTION PER CUSTOMER ---
+                # Expandable QR code component setup per loop
                 if upi_string:
-                    with st.expander(f"🔍 View Payment QR for {row['Grahak Ka Naam']}"):
+                    with st.expander(f"🔍 Scan QR for {row['Grahak Ka Naam']}"):
                         qr = qrcode.QRCode(box_size=4, border=2)
                         qr.add_data(upi_string)
                         qr.make(fit=True)
